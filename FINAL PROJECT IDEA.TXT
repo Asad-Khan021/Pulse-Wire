@@ -1,0 +1,55 @@
+Here's the complete project explained end-to-end, now locked into the Flutter stack.
+
+## 1. What the App Actually Does (User's Perspective)
+
+A user opens the app and sees a scrollable feed of tech news cards — clean titles, source, thumbnail, tags like #AI or #DevOps. They can filter by tag or mute a source they don't like. Tapping a card opens the article; tapping a "Summarize" affordance slides up a bottom sheet showing a 3-bullet AI summary. Inside that sheet, they can tap preset buttons ("Explain simpler," "Why does this matter," "What's the risk?") to get more AI-generated angles on the same article — each answer appears instantly if someone else already asked it, or takes a moment if it's the first time. They can tap a speaker icon to have the summary read aloud. They can bookmark articles, and if a bookmarked article has HN or Reddit discussion, they see upvote/comment counts with a direct link. If they lose signal, previously loaded cards still show up.
+
+## 2. The Two Systems Working Together
+
+**System A — Backend (FastAPI), running independently on a schedule:**
+This is a background job that runs every 15–30 minutes regardless of whether anyone's using the app. It pulls RSS feeds, cleans the HTML, dedupes articles, and stores them in Postgres. This is the "content pipeline" — it exists so that by the time a user opens the app, fresh articles are already sitting in the database, ready to serve instantly.
+
+**System B — Backend (FastAPI), running on-demand:**
+This is the request/response side — what happens when the Flutter app actually asks for something. "Give me the feed," "summarize this article," "what does HN say about this," "here's a bookmark, save it." This side is stateless and fast, and it leans on caching heavily so it almost never has to wait on a slow AI call if it can avoid it.
+
+Your Flutter app only ever talks to System B. It never touches RSS feeds or Gemini directly — that separation is deliberate: it keeps API keys server-side, keeps rate-limiting centralized, and means your app logic doesn't change even if you later swap Gemini for another model.
+
+## 3. The Caching Logic, Explained Simply
+
+Think of it as three tiers, checked in order, cheapest first:
+1. **Redis (fastest, in-memory):** "Has anyone asked for this exact summary/answer in the last few hours?" If yes, return instantly.
+2. **Postgres `summaries` table (still fast, durable):** "Has this ever been generated before, even if Redis forgot it?" If yes, return it and refresh Redis.
+3. **Gemini API (slowest, costs quota):** Only reached if steps 1 and 2 both miss — meaning this is truly the first time anyone, ever, asked this specific question about this specific article.
+
+Because your "chat" feature is a fixed set of preset questions (not open free-text), tier 3 gets hit only a handful of times per article total — not once per user. That's the entire cost-control strategy in one sentence: **turn potentially unlimited AI calls into a small, fixed, cacheable set.**
+
+## 4. Database Schema — What Each Table Is For
+
+- **`sources`** — the list of RSS feeds you're pulling from, plus health tracking (did this feed fail to load recently?) so one broken source doesn't take down ingestion.
+- **`articles`** — every article you've ingested, deduplicated by canonical URL and content hash, with the Readability-cleaned body stored so you never re-parse it.
+- **`summaries`** — every AI-generated piece of text for an article, whether it's the core 3-bullet summary or one of the preset follow-up answers. One table, differentiated by a `question_type` field — this is what makes the caching logic in point 3 possible.
+- **`signals`** — HN/Reddit discussion stats per article, refreshed periodically since counts change over time (short TTL, unlike summaries which don't need to change).
+- **`user_preferences`** — each user's followed tags and muted domains.
+- **`bookmarks`** — join table linking users to articles they've saved.
+
+Auth/user identity itself is handled by Supabase, so you don't build a `users` table from scratch.
+
+## 5. Flutter App Structure — What Each Piece Does
+
+- **`providers/`** (Riverpod) — the app's memory of state: what's in the feed right now, what's bookmarked, what tags are followed. Screens read from these instead of managing their own local state, so if two screens need the same data, they stay in sync automatically.
+- **`services/`** — the actual "doing" code: `news_api_service.dart` talks to your FastAPI backend over `dio`; `tts_service.dart` wraps `flutter_tts`; `offline_cache_service.dart` reads/writes Hive boxes so cards persist without internet.
+- **`screens/`** — full pages: the feed, bookmarks, settings.
+- **`widgets/`** — reusable pieces: the article card itself, the summary bottom sheet (which internally has tabs or buttons for the preset questions), the TTS play button, the tag filter bar.
+- **`models/`** — plain Dart classes mirroring your Postgres tables (`Article`, `Summary`, `Signal`) so JSON from the API deserializes into typed objects instead of raw maps.
+
+## 6. Offline Support — How It Actually Works
+
+The Flutter app doesn't talk to Postgres directly, ever — it talks to your FastAPI backend, which talks to Postgres. Offline support is a **separate, local copy** of recently-seen article cards stored in Hive on the device itself. When the app loads and has a connection, it fetches the latest feed and writes a snapshot into Hive. When it loads with no connection, it reads that last snapshot instead. Bookmarking while offline queues the action locally; once connectivity returns, queued actions flush up to the backend. This is intentionally simple — no complex conflict resolution needed, since a bookmark is just "add" or "remove," not something that can meaningfully conflict.
+
+## 7. Why the Architecture Is Shaped This Way
+
+Every non-obvious decision traces back to one of two constraints: **free-tier cost limits**, or **solo-developer time limits**. The cache-before-Gemini rule protects your Gemini quota. The preset-question chat instead of open chat protects both your quota *and* your development time, since open-ended chat needs conversation history management, longer context windows, and more unpredictable output. The Postgres-as-source-of-truth-with-Redis-as-accelerator pattern protects you from a scenario where Redis's free tier caps out mid-demo and your whole summarization feature breaks. Nothing here is arbitrary — if an examiner asks "why did you do X," the honest answer is traceable in every case.
+
+---
+
+Ready to start implementation whenever you are — the natural first step would be the FastAPI backend skeleton + Postgres schema migrations, since the Flutter app has nothing to talk to until that exists. Want to start there?

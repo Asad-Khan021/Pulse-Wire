@@ -1,0 +1,31 @@
+name: pulse_wire
+description: "Pulse Wire - AI-Powered Technology Intelligence Application with 3-Tier Summaries and Community Discussion Signals."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  dio: ^5.4.1
+  google_fonts: ^6.1.0
+  flutter_tts: ^4.1.0
+  shimmer: ^3.0.0
+  url_launcher: ^6.2.5
+  intl: ^0.19.0
+  cached_network_image: ^3.3.1
+  flutter_html: ^3.0.0-beta.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  connectivity_plus: ^7.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

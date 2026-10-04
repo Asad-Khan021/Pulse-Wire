@@ -1,0 +1,10 @@
+E:\proper files making\.agents\rules\graphify.md
+E:\proper files making\.agents\workflows\graphify.md
+E:\proper files making\Digest_PRD.md
+E:\proper files making\FINAL PROJECT IDEA.TXT
+E:\proper files making\FSD_Digest.md
+E:\proper files making\IT-News-App-Feature-Backlog.md
+E:\proper files making\SACD_Digest.md
+E:\proper files making\TAD_Digest.md
+E:\proper files making\backend\requirements.txt
+E:\proper files making\frontend\pubspec.yaml
